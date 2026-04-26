@@ -337,8 +337,6 @@ const S = {
     paddingTop: 12,
     paddingBottom: "calc(10px + env(safe-area-inset-bottom))",
     zIndex: 100,
-    transition: "transform 0.05s",
-    willChange: "transform",
   },
   navBtn: (a) => ({
     display: "flex", flexDirection: "column", alignItems: "center", gap: 5,
@@ -1032,26 +1030,39 @@ function App() {
       });
     });
 
-    // Hide nav bar when keyboard is open on iOS
+    // Pin nav bar to actual visible bottom using visualViewport
     const nav = document.getElementById("nav-bar");
-    if (!nav) return;
-
-    const update = () => {
-      if (!window.visualViewport) return;
-      const keyboardOpen = window.visualViewport.height < window.innerHeight * 0.8;
-      nav.style.display = keyboardOpen ? "none" : "flex";
+    const updateNav = () => {
+      if (!nav || !window.visualViewport) return;
+      const vv = window.visualViewport;
+      const keyboardOpen = vv.height < window.innerHeight * 0.75;
+      if (keyboardOpen) {
+        nav.style.display = "none";
+      } else {
+        nav.style.display = "flex";
+        // Pin to the bottom of the visual viewport
+        const bottom = window.innerHeight - (vv.offsetTop + vv.height);
+        nav.style.bottom = Math.max(0, bottom) + "px";
+      }
     };
 
+    updateNav();
+
     if (window.visualViewport) {
-      window.visualViewport.addEventListener("resize", update);
-      window.visualViewport.addEventListener("scroll", update);
+      window.visualViewport.addEventListener("resize", updateNav);
+      window.visualViewport.addEventListener("scroll", updateNav);
     }
+    // Also update on regular scroll and resize
+    window.addEventListener("resize", updateNav);
+    window.addEventListener("scroll", updateNav);
 
     return () => {
       if (window.visualViewport) {
-        window.visualViewport.removeEventListener("resize", update);
-        window.visualViewport.removeEventListener("scroll", update);
+        window.visualViewport.removeEventListener("resize", updateNav);
+        window.visualViewport.removeEventListener("scroll", updateNav);
       }
+      window.removeEventListener("resize", updateNav);
+      window.removeEventListener("scroll", updateNav);
     };
   }, []);
 
