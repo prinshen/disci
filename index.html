@@ -18,7 +18,10 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" />
   <style>
     * { -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { background: #0f0f0f; overscroll-behavior: none; height: 100%; }
+    html { background: #0f0f0f; height: 100%; }
+    body { background: #0f0f0f; height: 100%; overscroll-behavior-y: contain; }
+    #root, #root > div { width: 100%; }
+    div { max-width: 100%; }
     input, textarea, select { font-size: 16px !important; -webkit-appearance: none; }
     select { background: #161616; color: #f0f0f0; }
     button { -webkit-appearance: none; }
@@ -244,8 +247,19 @@ const C = {
 const FONT = "'Inter', 'Helvetica Neue', sans-serif";
 
 const S = {
-  app: { minHeight: "100dvh", background: C.bg, color: C.text, fontFamily: FONT, maxWidth: 430, margin: "0 auto", paddingBottom: "calc(70px + env(safe-area-inset-bottom))", WebkitFontSmoothing: "antialiased" },
-  header: { padding: "22px 20px 16px", borderBottom: `1px solid ${C.borderFaint}` },
+  app: {
+    minHeight: "100dvh",
+    background: C.bg, color: C.text, fontFamily: FONT,
+    maxWidth: 430, width: "100%", margin: "0 auto",
+    paddingBottom: "calc(72px + env(safe-area-inset-bottom))",
+    WebkitFontSmoothing: "antialiased",
+    position: "relative",
+  },
+  header: {
+    padding: "16px 20px",
+    paddingTop: "calc(16px + env(safe-area-inset-top))",
+    borderBottom: `1px solid ${C.borderFaint}`,
+  },
   dateLine: { fontSize: 11, color: C.textDim, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 4 },
   pageTitle: { fontSize: 24, fontWeight: 600, color: C.text, letterSpacing: "-0.03em" },
   sectionLabel: { fontSize: 11, color: C.textDim, letterSpacing: "0.1em", textTransform: "uppercase", padding: "20px 20px 8px" },
@@ -263,9 +277,22 @@ const S = {
   dayCol: { flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 5 },
   dayBar: (t) => ({ width: "100%", height: 3, borderRadius: 2, background: t === "done" ? C.green : t === "partial" ? C.amber : t === "failed" ? C.red : t === "today" ? C.accent : "#1e1e1e" }),
   dayLbl: { fontSize: 9, color: C.textDim },
-  navBar: { position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: C.bg, borderTop: `1px solid ${C.borderFaint}`, display: "flex", justifyContent: "space-around", paddingTop: 10, paddingBottom: "calc(14px + env(safe-area-inset-bottom))", zIndex: 100 },
-  navBtn: (a) => ({ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: "4px 20px", color: a ? C.text : C.textDim, fontFamily: FONT, touchAction: "manipulation" }),
-  navLabel: { fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase" },
+  navBar: {
+    position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)",
+    width: "100%", maxWidth: 430,
+    background: C.bg, borderTop: `1px solid ${C.borderFaint}`,
+    display: "flex", justifyContent: "space-around",
+    paddingTop: 12,
+    paddingBottom: "calc(10px + env(safe-area-inset-bottom))",
+    zIndex: 100,
+  },
+  navBtn: (a) => ({
+    display: "flex", flexDirection: "column", alignItems: "center", gap: 5,
+    background: "none", border: "none", cursor: "pointer",
+    padding: "4px 0", color: a ? C.text : C.textDim,
+    fontFamily: FONT, touchAction: "manipulation", flex: 1,
+  }),
+  navLabel: { fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase" },
   card: { margin: "0 20px 8px", padding: "14px 16px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8 },
   cardTitle: { fontSize: 15, fontWeight: 500, color: C.text },
   cardSub: { fontSize: 12, color: C.textDim, marginTop: 3 },
@@ -333,10 +360,10 @@ function TaskToggleRow({ task, done, onChange }) {
 
 function NavIcon({ name, active }) {
   const c = active ? C.text : C.textDim;
-  if (name === "today")   return <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="2" width="14" height="14" rx="2" stroke={c} strokeWidth="1.3"/><line x1="6" y1="7" x2="12" y2="7" stroke={c} strokeWidth="1.3" strokeLinecap="round"/><line x1="6" y1="10" x2="10" y2="10" stroke={c} strokeWidth="1.3" strokeLinecap="round"/></svg>;
-  if (name === "workout") return <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="6" stroke={c} strokeWidth="1.3"/><polyline points="6,9 8,11 12,7" stroke={c} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>;
-  if (name === "history") return <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="3" y="4" width="12" height="11" rx="1.5" stroke={c} strokeWidth="1.3"/><line x1="3" y1="7" x2="15" y2="7" stroke={c} strokeWidth="1.3"/><line x1="6" y1="2" x2="6" y2="5" stroke={c} strokeWidth="1.3" strokeLinecap="round"/><line x1="12" y1="2" x2="12" y2="5" stroke={c} strokeWidth="1.3" strokeLinecap="round"/></svg>;
-  if (name === "tasks")   return <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 5h12M3 9h8M3 13h10" stroke={c} strokeWidth="1.3" strokeLinecap="round"/></svg>;
+  if (name === "today")   return <svg width="24" height="24" viewBox="0 0 18 18" fill="none"><rect x="2" y="2" width="14" height="14" rx="2" stroke={c} strokeWidth="1.3"/><line x1="6" y1="7" x2="12" y2="7" stroke={c} strokeWidth="1.3" strokeLinecap="round"/><line x1="6" y1="10" x2="10" y2="10" stroke={c} strokeWidth="1.3" strokeLinecap="round"/></svg>;
+  if (name === "workout") return <svg width="24" height="24" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="6" stroke={c} strokeWidth="1.3"/><polyline points="6,9 8,11 12,7" stroke={c} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>;
+  if (name === "history") return <svg width="24" height="24" viewBox="0 0 18 18" fill="none"><rect x="3" y="4" width="12" height="11" rx="1.5" stroke={c} strokeWidth="1.3"/><line x1="3" y1="7" x2="15" y2="7" stroke={c} strokeWidth="1.3"/><line x1="6" y1="2" x2="6" y2="5" stroke={c} strokeWidth="1.3" strokeLinecap="round"/><line x1="12" y1="2" x2="12" y2="5" stroke={c} strokeWidth="1.3" strokeLinecap="round"/></svg>;
+  if (name === "tasks")   return <svg width="24" height="24" viewBox="0 0 18 18" fill="none"><path d="M3 5h12M3 9h8M3 13h10" stroke={c} strokeWidth="1.3" strokeLinecap="round"/></svg>;
   return null;
 }
 
@@ -392,7 +419,7 @@ function TodayScreen({ data, setData }) {
   }, [data, log, today, setData]);
 
   return (
-    <div>
+    <div style={{ width: "100%" }}>
       <div style={S.header}>
         <div style={S.dateLine}>{formatDate(today)}</div>
         <div style={S.pageTitle}>Today</div>
@@ -522,7 +549,7 @@ function TaskEditView({ task, onSave, onCancel }) {
   };
   const save = () => { if (!label.trim()) return; onSave({ id: task.id, label: label.trim(), sub: sub.trim(), days, isNew: task.isNew }); };
   return (
-    <div>
+    <div style={{ width: "100%" }}>
       <div style={S.header}>
         <BackButton onBack={onCancel} />
         <div style={S.pageTitle}>{task.isNew ? "New task" : (label || task.label)}</div>
@@ -575,7 +602,7 @@ function TasksScreen({ data, setData }) {
   if (editingTask) return <TaskEditView task={editingTask} onSave={saveTask} onCancel={() => setEditingTask(null)} />;
 
   return (
-    <div>
+    <div style={{ width: "100%" }}>
       <div style={S.header}>
         <div style={S.dateLine}>Manage</div>
         <div style={S.pageTitle}>Tasks</div>
@@ -685,7 +712,7 @@ function WorkoutScreen({ data, setData }) {
   }
 
   return (
-    <div>
+    <div style={{ width: "100%" }}>
       <div style={S.header}>
         <div style={S.dateLine}>Workout</div>
         <div style={S.pageTitle}>Plans</div>
@@ -758,14 +785,14 @@ function HistoryScreen({ data, setData }) {
   };
 
   return (
-    <div>
+    <div style={{ width: "100%" }}>
       <div style={S.header}>
         <div style={S.dateLine}>Current week</div>
         <div style={S.pageTitle}>History</div>
       </div>
       <div style={S.sectionLabel}>This week</div>
-      <div style={{ overflowX: "auto", padding: "0 20px" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+      <div style={{ width: "100%", padding: "0 20px", boxSizing: "border-box" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, tableLayout: "fixed" }}>
           <thead>
             <tr>
               <th style={{ textAlign: "left", color: C.textDim, fontWeight: 400, padding: "6px 0", fontSize: 11 }}></th>
