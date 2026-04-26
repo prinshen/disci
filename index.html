@@ -22,6 +22,7 @@
     body { background: #0f0f0f; height: 100%; overscroll-behavior-y: contain; }
     #root, #root > div { width: 100%; }
     div { max-width: 100%; }
+    #nav-bar { transition: none !important; }
     input, textarea, select { font-size: 16px !important; -webkit-appearance: none; }
     select { background: #161616; color: #f0f0f0; }
     button { -webkit-appearance: none; }
@@ -336,6 +337,8 @@ const S = {
     paddingTop: 12,
     paddingBottom: "calc(10px + env(safe-area-inset-bottom))",
     zIndex: 100,
+    transition: "transform 0.05s",
+    willChange: "transform",
   },
   navBtn: (a) => ({
     display: "flex", flexDirection: "column", alignItems: "center", gap: 5,
@@ -1021,7 +1024,6 @@ function App() {
   useEffect(() => {
     loadData().then(d => {
       setData(d);
-      // Register service worker and schedule notification if enabled
       registerSW().then(() => {
         const settings = getNotifSettings();
         if (settings.enabled && settings.time && "Notification" in window && Notification.permission === "granted") {
@@ -1029,6 +1031,28 @@ function App() {
         }
       });
     });
+
+    // Hide nav bar when keyboard is open on iOS
+    const nav = document.getElementById("nav-bar");
+    if (!nav) return;
+
+    const update = () => {
+      if (!window.visualViewport) return;
+      const keyboardOpen = window.visualViewport.height < window.innerHeight * 0.8;
+      nav.style.display = keyboardOpen ? "none" : "flex";
+    };
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", update);
+      window.visualViewport.addEventListener("scroll", update);
+    }
+
+    return () => {
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener("resize", update);
+        window.visualViewport.removeEventListener("scroll", update);
+      }
+    };
   }, []);
 
   if (!data) return (
@@ -1050,7 +1074,7 @@ function App() {
       {tab === "workout" && <WorkoutScreen  data={data} setData={setData} />}
       {tab === "tasks"   && <TasksScreen    data={data} setData={setData} />}
       {tab === "history" && <HistoryScreen  data={data} setData={setData} />}
-      <div style={S.navBar}>
+      <div id="nav-bar" style={S.navBar}>
         {NAV.map(({ id, label }) => (
           <button key={id} style={S.navBtn(tab === id)} onClick={() => setTab(id)}>
             <NavIcon name={id} active={tab === id} />
