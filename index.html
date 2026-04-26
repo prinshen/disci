@@ -18,15 +18,15 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" />
   <style>
     * { -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; box-sizing: border-box; margin: 0; padding: 0; }
-    html { background: #0f0f0f; height: 100%; }
-    body { background: #0f0f0f; height: 100%; overscroll-behavior-y: contain; }
-    #root, #root > div { width: 100%; }
+    html, body { background: #0f0f0f; height: 100%; width: 100%; overflow: hidden; position: fixed; }
+    #root { height: 100%; width: 100%; display: flex; flex-direction: column; align-items: center; }
     div { max-width: 100%; }
-    #nav-bar { transition: none !important; }
     input, textarea, select { font-size: 16px !important; -webkit-appearance: none; }
     select { background: #161616; color: #f0f0f0; }
     button { -webkit-appearance: none; }
     ::-webkit-scrollbar { display: none; }
+    #content-area { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; width: 100%; }
+    #nav-bar { flex-shrink: 0; }
   </style>
 </head>
 <body>
@@ -300,11 +300,12 @@ const FONT = "'Inter', 'Helvetica Neue', sans-serif";
 
 const S = {
   app: {
-    minHeight: "100dvh",
+    height: "100dvh",
     background: C.bg, color: C.text, fontFamily: FONT,
-    maxWidth: 430, width: "100%", margin: "0 auto",
+    maxWidth: 430, width: "100%",
     WebkitFontSmoothing: "antialiased",
     display: "flex", flexDirection: "column",
+    overflow: "hidden",
   },
   header: {
     padding: "16px 20px",
@@ -329,14 +330,13 @@ const S = {
   dayBar: (t) => ({ width: "100%", height: 3, borderRadius: 2, background: t === "done" ? C.green : t === "partial" ? C.amber : t === "failed" ? C.red : t === "today" ? C.accent : "#1e1e1e" }),
   dayLbl: { fontSize: 9, color: C.textDim },
   navBar: {
-    position: "sticky", bottom: 0,
     width: "100%",
     background: C.bg, borderTop: `1px solid ${C.borderFaint}`,
     display: "flex", justifyContent: "space-around",
     paddingTop: 12,
     paddingBottom: "calc(10px + env(safe-area-inset-bottom))",
     zIndex: 100,
-    marginTop: "auto",
+    flexShrink: 0,
   },
   navBtn: (a) => ({
     display: "flex", flexDirection: "column", alignItems: "center", gap: 5,
@@ -1018,6 +1018,9 @@ function HistoryScreen({ data, setData }) {
 function App() {
   const [data, setData] = useState(null);
   const [tab, setTab] = useState("today");
+  const touchStart = useRef(null);
+
+  const TABS = ["today", "workout", "tasks", "history"];
 
   useEffect(() => {
     loadData().then(d => {
@@ -1031,8 +1034,22 @@ function App() {
     });
   }, []);
 
+  const onTouchStart = (e) => {
+    touchStart.current = e.touches[0].clientX;
+  };
+
+  const onTouchEnd = (e) => {
+    if (touchStart.current === null) return;
+    const dx = e.changedTouches[0].clientX - touchStart.current;
+    touchStart.current = null;
+    if (Math.abs(dx) < 60) return;
+    const tabIdx = TABS.indexOf(tab);
+    if (dx < 0 && tabIdx < TABS.length - 1) setTab(TABS[tabIdx + 1]);
+    if (dx > 0 && tabIdx > 0) setTab(TABS[tabIdx - 1]);
+  };
+
   if (!data) return (
-    <div style={{ ...S.app, display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div style={{ ...S.app, alignItems: "center", justifyContent: "center" }}>
       <div style={{ fontSize: 12, color: C.textDim }}>Loading…</div>
     </div>
   );
@@ -1046,7 +1063,7 @@ function App() {
 
   return (
     <div style={S.app}>
-      <div style={{ flex: 1 }}>
+      <div id="content-area" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
         {tab === "today"   && <TodayScreen   data={data} setData={setData} />}
         {tab === "workout" && <WorkoutScreen  data={data} setData={setData} />}
         {tab === "tasks"   && <TasksScreen    data={data} setData={setData} />}
