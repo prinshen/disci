@@ -40,6 +40,57 @@
   <script type="text/babel">
 const { useState, useEffect, useCallback, useRef } = React;
 
+// ── Notification system ───────────────────────────────────────────
+const NOTIF_KEY = "discipline_notif";
+
+function getNotifSettings() {
+  try { return JSON.parse(localStorage.getItem(NOTIF_KEY) || "{}"); } catch { return {}; }
+}
+
+function saveNotifSettings(s) {
+  localStorage.setItem(NOTIF_KEY, JSON.stringify(s));
+}
+
+async function registerSW() {
+  if (!("serviceWorker" in navigator)) return null;
+  try {
+    const reg = await navigator.serviceWorker.register("sw.js");
+    return reg;
+  } catch { return null; }
+}
+
+async function requestPermission() {
+  if (!("Notification" in window)) return "unsupported";
+  if (Notification.permission === "granted") return "granted";
+  if (Notification.permission === "denied") return "denied";
+  const result = await Notification.requestPermission();
+  return result;
+}
+
+function scheduleNotification(data) {
+  const settings = getNotifSettings();
+  if (!settings.enabled || !settings.time) return;
+  const [hh, mm] = settings.time.split(":").map(Number);
+  const now = new Date();
+  const target = new Date();
+  target.setHours(hh, mm, 0, 0);
+  // If time already passed today, schedule for tomorrow
+  if (target <= now) target.setDate(target.getDate() + 1);
+  const delay = target.getTime() - now.getTime();
+
+  // Clear any existing timer
+  if (window._notifTimer) clearTimeout(window._notifTimer);
+
+  window._notifTimer = setTimeout(async () => {
+    if (Notification.permission !== "granted") return;
+    const reg = await navigator.serviceWorker.ready;
+    reg.active.postMessage({ type: "CHECK_NOTIFY", data });
+    // Reschedule for next day
+    scheduleNotification(data);
+  }, delay);
+}
+
+
 // ── Storage (localStorage) ────────────────────────────────────────
 const STORAGE_KEY = "discipline_v3";
 
@@ -536,6 +587,87 @@ function TodayScreen({ data, setData }) {
   );
 }
 
+// ── NOTIFICATION CARD ─────────────────────────────────────────────
+function NotificationCard({ data }) {
+  const [settings, setSettings] = useState(getNotifSettings);
+  const [permission, setPermission] = useState(
+    "Notification" in window ? Notification.permission : "unsupported"
+  );
+  const [swSupported] = useState("serviceWorker" in navigator);
+
+  const save = async (newSettings) => {
+    saveNotifSettings(newSettings);
+    setSettings(newSettings);
+    if (newSettings.enabled && permission !== "granted") {
+      const p = await requestPermission();
+      setPermission(p);
+      if (p === "granted") scheduleNotification(data);
+    } else if (newSettings.enabled && permission === "granted") {
+      scheduleNotification(data);
+    }
+  };
+
+  const toggleEnabled = async () => {
+    const next = { ...settings, enabled: !settings.enabled };
+    if (next.enabled && !next.time) next.time = "08:00";
+    await save(next);
+  };
+
+  const setTime = (t) => {
+    const next = { ...settings, time: t };
+    saveNotifSettings(next);
+    setSettings(next);
+    if (settings.enabled && permission === "granted") scheduleNotification(data);
+  };
+
+  if (!swSupported) return null;
+
+  return (
+    <>
+      <div style={S.sectionLabel}>Daily reminder</div>
+      <div style={{ ...S.card, margin: "0 20px 20px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: settings.enabled ? 14 : 0 }}>
+          <div>
+            <div style={{ fontSize: 15, color: C.text, fontWeight: 500 }}>Daily notification</div>
+            <div style={{ fontSize: 12, color: C.textDim, marginTop: 2 }}>
+              {permission === "denied" ? "Blocked — enable in iPhone Settings" :
+               permission === "unsupported" ? "Not supported on this device" :
+               settings.enabled ? `Reminds you + shows weekly progress` : "Off"}
+            </div>
+          </div>
+          {permission !== "denied" && permission !== "unsupported" && (
+            <div
+              style={{ width: 62, height: 36, borderRadius: 18, flexShrink: 0, marginLeft: 12, background: settings.enabled ? C.greenBg : "#252525", border: `1.5px solid ${settings.enabled ? C.green : C.border}`, position: "relative", transition: "all 0.2s", cursor: "pointer" }}
+              onClick={toggleEnabled}
+            >
+              <div style={{ position: "absolute", top: 4, left: settings.enabled ? 28 : 4, width: 24, height: 24, borderRadius: "50%", background: settings.enabled ? C.green : "#555", display: "flex", alignItems: "center", justifyContent: "center", transition: "left 0.2s, background 0.2s", fontSize: 11, fontWeight: 700, color: settings.enabled ? C.bg : "#333" }}>
+                {settings.enabled ? "✓" : "✕"}
+              </div>
+            </div>
+          )}
+        </div>
+        {settings.enabled && permission === "granted" && (
+          <div>
+            <div style={{ fontSize: 12, color: C.textMid, marginBottom: 8 }}>Reminder time</div>
+            <input
+              type="time"
+              value={settings.time || "08:00"}
+              onChange={e => setTime(e.target.value)}
+              style={{ ...S.input, marginBottom: 0, colorScheme: "dark" }}
+            />
+            <div style={{ fontSize: 11, color: C.textDim, marginTop: 8, lineHeight: 1.5 }}>
+              Message will include today's remaining tasks and the best score you can reach this week.
+            </div>
+          </div>
+        )}
+        {settings.enabled && permission === "default" && (
+          <div style={{ fontSize: 12, color: C.amber, marginTop: 4 }}>Tap the toggle to grant notification permission.</div>
+        )}
+      </div>
+    </>
+  );
+}
+
 // ── TASKS ─────────────────────────────────────────────────────────
 function TaskEditView({ task, onSave, onCancel }) {
   const [label, setLabel] = useState(task.label);
@@ -626,6 +758,8 @@ function TasksScreen({ data, setData }) {
       <div style={{ padding: "12px 20px 0" }}>
         <button style={{ ...S.btn("secondary"), marginBottom: 0 }} onClick={() => setEditingTask({ id: uid(), label: "", sub: "", days: [], isNew: true })}>+ Add task</button>
       </div>
+
+      <NotificationCard data={data} />
     </div>
   );
 }
@@ -884,7 +1018,18 @@ function App() {
   const [data, setData] = useState(null);
   const [tab, setTab] = useState("today");
 
-  useEffect(() => { loadData().then(setData); }, []);
+  useEffect(() => {
+    loadData().then(d => {
+      setData(d);
+      // Register service worker and schedule notification if enabled
+      registerSW().then(() => {
+        const settings = getNotifSettings();
+        if (settings.enabled && settings.time && "Notification" in window && Notification.permission === "granted") {
+          scheduleNotification(d);
+        }
+      });
+    });
+  }, []);
 
   if (!data) return (
     <div style={{ ...S.app, display: "flex", alignItems: "center", justifyContent: "center" }}>
