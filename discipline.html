@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Discipline" />
+  <meta name="theme-color" content="#0f0f0f" />
+  <title>Discipline</title>
+
+  <!-- Preload all scripts in parallel before parsing begins -->
+  <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" as="script" crossorigin />
+  <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" as="script" crossorigin />
+  <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js" as="script" crossorigin />
+  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" as="style" />
+
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" />
+  <style>
+    * { -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { background: #0f0f0f; overscroll-behavior: none; height: 100%; }
+    input, textarea, select { font-size: 16px !important; -webkit-appearance: none; }
+    select { background: #161616; color: #f0f0f0; }
+    button { -webkit-appearance: none; }
+    ::-webkit-scrollbar { display: none; }
+  </style>
+</head>
+<body>
+  <!-- Instant splash: visible immediately, before any JS loads -->
+  <div id="root" style="min-height:100dvh;background:#0f0f0f;display:flex;align-items:center;justify-content:center;">
+    <div style="font-size:12px;color:#555;font-family:'Helvetica Neue',sans-serif;letter-spacing:0.12em;text-transform:uppercase;">Discipline</div>
+  </div>
+  <!-- Scripts at end of body so splash renders first -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+
+// ── Storage (localStorage) ────────────────────────────────────────
+const STORAGE_KEY = "discipline_v3";
+
+async function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : defaultData();
+  } catch { return defaultData(); }
+}
+
+async function saveData(data) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
+}
+
+function defaultData() {
+  return {
+    logs: {},
+    tasks: [
+      { id: "workout",        label: "Workout",       sub: "completed a session" },
+      { id: "active",         label: "Active",         sub: "walk · run · bike · swim" },
+      { id: "healthy_eating", label: "Healthy eating", sub: "" },
+      { id: "sleep_good",     label: "Good sleep",     sub: "" },
+      { id: "meditation",     label: "Meditation",     sub: "optional" },
+    ],
+    plans: [
+      { id: "push", name: "Push", exercises: ["Bench press", "Shoulder press", "Tricep dips"] },
+      { id: "pull", name: "Pull", exercises: ["Pull-ups", "Barbell rows", "Bicep curls"] },
+      { id: "legs", name: "Legs", exercises: ["Squats", "Romanian deadlift", "Lunges"] },
+    ],
+    sessions: [],
+    schedules: {
+      workout:        [0,1,2,3,4],
+      active:         [0,1,2,3,4,5,6],
+      healthy_eating: [0,1,2,3,4,5,6],
+      sleep_good:     [0,1,2,3,4,5,6],
+      meditation:     [],
+    },
+  };
+}
+
+// ── Date helpers ──────────────────────────────────────────────────
+function todayStr() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function getWeekDays() {
+  const now = new Date();
+  const daysFromMon = (now.getDay() + 6) % 7;
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(now);
+    d.setDate(now.getDate() - daysFromMon + i);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  });
+}
+
+function dayIndex(dateStr) {
+  return (new Date(dateStr + "T00:00:00").getDay() + 6) % 7;
+}
+
+function getLog(data, date) {
+  const base = {};
+  (data.tasks || []).forEach(t => { base[t.id] = false; });
+  return { ...base, ...(data.logs[date] || {}) };
+}
+
+function formatDate(str) {
+  return new Date(str + "T00:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+}
+
+function shortDay(str) {
+  return new Date(str + "T00:00:00").toLocaleDateString("en-GB", { weekday: "short" }).slice(0, 1).toUpperCase();
+}
+
+function uid() { return Math.random().toString(36).slice(2, 9); }
+
+const DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
+const DAY_NAMES  = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+
+function getSchedule(data, taskId) {
+  return (data.schedules || {})[taskId] || [];
+}
+
+function tasksForDate(data, dateStr) {
+  const di = dayIndex(dateStr);
+  return (data.tasks || []).filter(t => getSchedule(data, t.id).includes(di));
+}
+
+// ── Compliance ────────────────────────────────────────────────────
+function evaluateAllTasks(data) {
+  const today = todayStr();
+  const weekDays = getWeekDays();
+  const todayIdx = weekDays.indexOf(today);
+
+  return (data.tasks || []).map(task => {
+    const schedule = getSchedule(data, task.id);
+    if (schedule.length === 0) return null;
+    const scheduledPast = [];
+    let todayScheduled = false;
+    weekDays.forEach((d, i) => {
+      if (!schedule.includes(dayIndex(d))) return;
+      if (i < todayIdx) scheduledPast.push(d);
+      else if (i === todayIdx) todayScheduled = true;
+    });
+    const pastDone   = scheduledPast.filter(d => getLog(data, d)[task.id]).length;
+    const pastMissed = scheduledPast.length - pastDone;
+    const todayDone  = todayScheduled ? getLog(data, today)[task.id] : true;
+    const totalSoFar = scheduledPast.length + (todayScheduled ? 1 : 0);
+    const doneSoFar  = pastDone + (todayScheduled && todayDone ? 1 : 0);
+    let status, detail, warning = null;
+    if (pastMissed > 0) {
+      status = "failed"; detail = `Missed ${pastMissed} scheduled day${pastMissed > 1 ? "s" : ""}`;
+    } else if (todayScheduled && !todayDone) {
+      status = "at_risk"; detail = totalSoFar > 1 ? `${doneSoFar} of ${totalSoFar} done this week` : "Not done yet today"; warning = "Do this today.";
+    } else {
+      status = "on_track"; detail = totalSoFar === 0 ? "Nothing scheduled yet" : `${doneSoFar} of ${totalSoFar} done`;
+    }
+    return { taskId: task.id, label: task.label, status, detail, warning, doneSoFar, totalSoFar };
+  }).filter(Boolean);
+}
+
+function computeCompliance(data) {
+  const today = todayStr();
+  const weekDays = getWeekDays();
+  const todayIdx = weekDays.indexOf(today);
+  let required = 0, done = 0;
+  (data.tasks || []).forEach(task => {
+    const schedule = getSchedule(data, task.id);
+    weekDays.forEach((d, i) => {
+      if (i > todayIdx) return;
+      if (!schedule.includes(dayIndex(d))) return;
+      required++;
+      if (getLog(data, d)[task.id]) done++;
+    });
+  });
+  return required === 0 ? 100 : Math.round((done / required) * 100);
+}
+
+function bestPossibleScore(data) {
+  const today = todayStr();
+  const weekDays = getWeekDays();
+  const todayIdx = weekDays.indexOf(today);
+  let required = 0, done = 0;
+  (data.tasks || []).forEach(task => {
+    const schedule = getSchedule(data, task.id);
+    weekDays.forEach((d, i) => {
+      if (!schedule.includes(dayIndex(d))) return;
+      required++;
+      if (i < todayIdx) { if (getLog(data, d)[task.id]) done++; }
+      else done++;
+    });
+  });
+  return required === 0 ? 100 : Math.round((done / required) * 100);
+}
+
+function computeWeekCompliance(data, weekDays) {
+  let required = 0, done = 0;
+  (data.tasks || []).forEach(task => {
+    const schedule = getSchedule(data, task.id);
+    weekDays.forEach(d => {
+      if (!schedule.includes(dayIndex(d))) return;
+      required++;
+      if (getLog(data, d)[task.id]) done++;
+    });
+  });
+  return required === 0 ? null : Math.round((done / required) * 100);
+}
+
+function dayScore(data, dateStr) {
+  const tasks = tasksForDate(data, dateStr);
+  if (tasks.length === 0) return null;
+  const log = getLog(data, dateStr);
+  const done = tasks.filter(t => log[t.id]).length;
+  return Math.round((done / tasks.length) * 100);
+}
+
+function getWeekDaysOffset(weeksAgo) {
+  const now = new Date();
+  const daysFromMon = (now.getDay() + 6) % 7;
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(now);
+    d.setDate(now.getDate() - daysFromMon + i - weeksAgo * 7);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  });
+}
+
+// ── Tokens ────────────────────────────────────────────────────────
+const C = {
+  bg: "#0f0f0f", surface: "#181818", border: "#2a2a2a", borderFaint: "#1e1e1e",
+  text: "#f0f0f0", textMid: "#aaa", textDim: "#666",
+  green: "#4caf7d", greenBg: "#0d2b1a", greenBorder: "#1a4a2a",
+  amber: "#f0a040", amberBg: "#2a1e00",
+  red: "#e05555", redBg: "#2a0d0d",
+  accent: "#f0f0f0",
+};
+const FONT = "'Inter', 'Helvetica Neue', sans-serif";
+
+const S = {
+  app: { minHeight: "100dvh", background: C.bg, color: C.text, fontFamily: FONT, maxWidth: 430, margin: "0 auto", paddingBottom: "calc(70px + env(safe-area-inset-bottom))", WebkitFontSmoothing: "antialiased" },
+  header: { padding: "22px 20px 16px", borderBottom: `1px solid ${C.borderFaint}` },
+  dateLine: { fontSize: 11, color: C.textDim, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 4 },
+  pageTitle: { fontSize: 24, fontWeight: 600, color: C.text, letterSpacing: "-0.03em" },
+  sectionLabel: { fontSize: 11, color: C.textDim, letterSpacing: "0.1em", textTransform: "uppercase", padding: "20px 20px 8px" },
+  row: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 20px", borderBottom: `1px solid ${C.borderFaint}` },
+  rowLabel: { fontSize: 15, color: C.text },
+  rowSub: { fontSize: 12, color: C.textDim, marginTop: 2 },
+  toggleBox: (on) => ({ width: 42, height: 24, borderRadius: 12, background: on ? C.accent : "#252525", border: on ? "none" : `1px solid ${C.border}`, position: "relative", transition: "background 0.15s", flexShrink: 0, cursor: "pointer" }),
+  toggleKnob: (on) => ({ position: "absolute", top: on ? 3 : 4, left: on ? 21 : 4, width: on ? 18 : 16, height: on ? 18 : 16, borderRadius: "50%", background: on ? C.bg : "#555", transition: "all 0.15s" }),
+  statusCard: (s) => ({ margin: "0 20px 8px", padding: "13px 15px", background: C.surface, border: `1px solid ${s === "failed" ? "#3d1a1a" : s === "at_risk" ? "#3d2800" : C.border}`, borderRadius: 8 }),
+  badge: (s) => ({ fontSize: 10, fontWeight: 500, padding: "3px 8px", borderRadius: 4, letterSpacing: "0.07em", textTransform: "uppercase", background: s === "on_track" ? C.greenBg : s === "at_risk" ? C.amberBg : C.redBg, color: s === "on_track" ? C.green : s === "at_risk" ? C.amber : C.red }),
+  scoreBlock: { margin: "12px 20px 0", padding: "20px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8 },
+  scoreNum: { fontSize: 52, fontWeight: 600, letterSpacing: "-0.05em", lineHeight: 1, color: C.text },
+  scoreSub: { fontSize: 11, color: C.textDim, letterSpacing: "0.08em", textTransform: "uppercase", marginTop: 4 },
+  weekBar: { display: "flex", gap: 4, marginTop: 14 },
+  dayCol: { flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 5 },
+  dayBar: (t) => ({ width: "100%", height: 3, borderRadius: 2, background: t === "done" ? C.green : t === "partial" ? C.amber : t === "failed" ? C.red : t === "today" ? C.accent : "#1e1e1e" }),
+  dayLbl: { fontSize: 9, color: C.textDim },
+  navBar: { position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: C.bg, borderTop: `1px solid ${C.borderFaint}`, display: "flex", justifyContent: "space-around", paddingTop: 10, paddingBottom: "calc(14px + env(safe-area-inset-bottom))", zIndex: 100 },
+  navBtn: (a) => ({ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", padding: "4px 20px", color: a ? C.text : C.textDim, fontFamily: FONT, touchAction: "manipulation" }),
+  navLabel: { fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase" },
+  card: { margin: "0 20px 8px", padding: "14px 16px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8 },
+  cardTitle: { fontSize: 15, fontWeight: 500, color: C.text },
+  cardSub: { fontSize: 12, color: C.textDim, marginTop: 3 },
+  exercisePill: (done) => ({ width: 28, height: 28, borderRadius: "50%", border: `1px solid ${done ? C.green : C.border}`, background: done ? C.greenBg : "transparent", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }),
+  input: { width: "100%", background: "#161616", border: `1px solid ${C.border}`, borderRadius: 6, color: C.text, fontFamily: FONT, fontSize: 16, padding: "12px", marginBottom: 8, outline: "none", boxSizing: "border-box", WebkitAppearance: "none" },
+  btn: (v = "primary") => ({ width: "100%", padding: "14px", background: v === "primary" ? C.accent : "transparent", color: v === "primary" ? C.bg : C.textMid, border: v === "primary" ? "none" : `1px solid ${C.border}`, borderRadius: 8, fontFamily: FONT, fontSize: 14, fontWeight: v === "primary" ? 600 : 400, letterSpacing: "0.04em", cursor: "pointer", marginBottom: 8, textTransform: "uppercase", touchAction: "manipulation", WebkitAppearance: "none" }),
+  iconBtn: { background: "none", border: "none", cursor: "pointer", padding: "6px 8px", color: C.textDim, fontFamily: FONT, fontSize: 16, lineHeight: 1, touchAction: "manipulation" },
+  select: { background: "#161616", border: `1px solid ${C.border}`, borderRadius: 6, color: C.text, fontFamily: FONT, fontSize: 16, padding: "12px", marginBottom: 8, outline: "none", width: "100%" },
+};
+
+// ── Components ────────────────────────────────────────────────────
+function DayPicker({ value, onChange }) {
+  const toggle = (i) => {
+    const next = value.includes(i) ? value.filter(d => d !== i) : [...value, i].sort((a, b) => a - b);
+    onChange(next);
+  };
+  return (
+    <div style={{ display: "flex", gap: 7 }}>
+      {DAY_LABELS.map((lbl, i) => {
+        const on = value.includes(i);
+        return (
+          <div key={i} onClick={() => toggle(i)} style={{ width: 34, height: 34, borderRadius: "50%", border: `1px solid ${on ? C.green : C.border}`, background: on ? C.greenBg : "transparent", color: on ? C.green : C.textDim, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 500, cursor: "pointer", transition: "all 0.12s", flexShrink: 0, touchAction: "manipulation" }}>
+            {lbl}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function Toggle({ value, onChange }) {
+  return (
+    <div style={S.toggleBox(value)} onClick={() => onChange(!value)}>
+      <div style={S.toggleKnob(value)} />
+    </div>
+  );
+}
+
+function BackButton({ onBack }) {
+  return (
+    <button onClick={onBack} style={{ background: "none", border: "none", cursor: "pointer", color: C.textMid, fontFamily: FONT, fontSize: 13, display: "flex", alignItems: "center", gap: 5, padding: 0, marginBottom: 10, touchAction: "manipulation" }}>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M10 3L5 8L10 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+      Back
+    </button>
+  );
+}
+
+function TaskToggleRow({ task, done, onChange }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: `1px solid ${C.borderFaint}`, cursor: "pointer", touchAction: "manipulation", minHeight: 56 }} onClick={() => onChange(!done)}>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 16, fontWeight: 500, color: done ? C.textDim : C.text, transition: "color 0.15s" }}>{task.label}</div>
+        {task.sub && <div style={{ fontSize: 12, color: C.textDim, marginTop: 2 }}>{task.sub}</div>}
+      </div>
+      <div style={{ width: 62, height: 36, borderRadius: 18, flexShrink: 0, marginLeft: 12, background: done ? C.greenBg : "#252525", border: `1.5px solid ${done ? C.green : C.border}`, position: "relative", transition: "all 0.2s" }}>
+        <div style={{ position: "absolute", top: 4, left: done ? 28 : 4, width: 24, height: 24, borderRadius: "50%", background: done ? C.green : "#555", display: "flex", alignItems: "center", justifyContent: "center", transition: "left 0.2s, background 0.2s", fontSize: 11, fontWeight: 700, color: done ? C.bg : "#333" }}>
+          {done ? "✓" : "✕"}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NavIcon({ name, active }) {
+  const c = active ? C.text : C.textDim;
+  if (name === "today")   return <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="2" width="14" height="14" rx="2" stroke={c} strokeWidth="1.3"/><line x1="6" y1="7" x2="12" y2="7" stroke={c} strokeWidth="1.3" strokeLinecap="round"/><line x1="6" y1="10" x2="10" y2="10" stroke={c} strokeWidth="1.3" strokeLinecap="round"/></svg>;
+  if (name === "workout") return <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="6" stroke={c} strokeWidth="1.3"/><polyline points="6,9 8,11 12,7" stroke={c} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>;
+  if (name === "history") return <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="3" y="4" width="12" height="11" rx="1.5" stroke={c} strokeWidth="1.3"/><line x1="3" y1="7" x2="15" y2="7" stroke={c} strokeWidth="1.3"/><line x1="6" y1="2" x2="6" y2="5" stroke={c} strokeWidth="1.3" strokeLinecap="round"/><line x1="12" y1="2" x2="12" y2="5" stroke={c} strokeWidth="1.3" strokeLinecap="round"/></svg>;
+  if (name === "tasks")   return <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 5h12M3 9h8M3 13h10" stroke={c} strokeWidth="1.3" strokeLinecap="round"/></svg>;
+  return null;
+}
+
+// ── TODAY ─────────────────────────────────────────────────────────
+function TodayScreen({ data, setData }) {
+  const today = todayStr();
+  const log = getLog(data, today);
+  const scheduledTasks = tasksForDate(data, today);
+  const taskResults = evaluateAllTasks(data);
+  const score = computeCompliance(data);
+  const best = bestPossibleScore(data);
+  const weekDays = getWeekDays();
+  const todayIdx = weekDays.indexOf(today);
+  const daysLeft = 6 - todayIdx;
+
+  const scoreColor = score === 100 ? C.green : best >= 90 ? "#3b82f6" : best >= 75 ? C.amber : C.red;
+  const meterColor = score === 100 ? C.green : best >= 90 ? "#3b82f6" : best >= 75 ? C.amber : C.red;
+
+  const PERFECT_MESSAGES = [
+    "WOW! PERFECT WEEK! You did absolutely everything you said you would. That's rare.",
+    "PERFECT WEEK! 100%. No excuses needed — you just did the work.",
+    "FLAWLESS WEEK! Every single task, every single day. Keep this energy.",
+  ];
+
+  const complianceTip = (() => {
+    if (score === 100 && daysLeft === 0) return PERFECT_MESSAGES[new Date().getDay() % PERFECT_MESSAGES.length];
+    if (score === 100) return "Perfect so far — and 100% is still on the table. Don't stop now.";
+    const todayTasks = tasksForDate(data, today);
+    const todayDone = todayTasks.filter(t => log[t.id]).length;
+    const todayLeft = todayTasks.length - todayDone;
+    if (best < 75) {
+      const msgs = [`Best case this week is ${best}%. Finish what you can and reset Sunday.`, `Ceiling is ${best}% now. Not what you wanted, but don't write off the rest.`, `You can still reach ${best}% if you nail every remaining task.`];
+      return msgs[daysLeft % msgs.length];
+    }
+    if (best < 90) {
+      const msgs = [`100% is gone, but ${best}% is still possible. That's a solid week.`, `You can still hit ${best}% — above 75% is a win.`, `${best}% is your ceiling. Get there and you'll have nothing to regret.`];
+      return msgs[daysLeft % msgs.length];
+    }
+    if (best === 100) {
+      if (todayLeft > 0 && daysLeft === 0) return `${todayLeft} task${todayLeft > 1 ? "s" : ""} left today. 100% is still on the table — finish strong.`;
+      if (todayLeft > 0) return `100% is still reachable. Finish today and stay perfect.`;
+      if (daysLeft > 0) return `On track for 100%. ${daysLeft} day${daysLeft !== 1 ? "s" : ""} left — don't break the streak.`;
+      return `One more push and the week is perfect.`;
+    }
+    if (daysLeft > 0) return `90%+ is reachable. ${daysLeft} day${daysLeft !== 1 ? "s" : ""} to get there.`;
+    return `Strong week. Make today count.`;
+  })();
+
+  const setLog = useCallback(async (taskId, val) => {
+    const newData = { ...data, logs: { ...data.logs, [today]: { ...log, [taskId]: val } } };
+    setData(newData);
+    await saveData(newData);
+  }, [data, log, today, setData]);
+
+  return (
+    <div>
+      <div style={S.header}>
+        <div style={S.dateLine}>{formatDate(today)}</div>
+        <div style={S.pageTitle}>Today</div>
+      </div>
+
+      {/* Compliance block */}
+      <div style={{ margin: "12px 20px 8px", padding: "13px 15px", background: score === 100 ? C.greenBg : C.surface, border: `1px solid ${score === 100 ? C.greenBorder : C.border}`, borderRadius: 8, transition: "background 0.4s, border-color 0.4s" }}>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+          <div style={{ fontSize: 40, fontWeight: 600, letterSpacing: "-0.05em", lineHeight: 1, color: scoreColor, transition: "color 0.4s" }}>{score}%</div>
+          <div style={{ fontSize: 11, color: C.textDim, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 5 }}>compliance this week</div>
+        </div>
+        <div style={{ height: 4, background: "#1e1e1e", borderRadius: 2, marginTop: 10, overflow: "hidden" }}>
+          <div style={{ height: "100%", borderRadius: 2, width: `${score}%`, background: meterColor, transition: "width 0.5s ease, background 0.4s" }} />
+        </div>
+        <div style={S.weekBar}>
+          {weekDays.map((d, i) => {
+            const di = dayIndex(d);
+            const dayTasks = (data.tasks || []).filter(t => getSchedule(data, t.id).includes(di));
+            const l = getLog(data, d);
+            const ds = dayTasks.length > 0 ? Math.round(dayTasks.filter(t => l[t.id]).length / dayTasks.length * 100) : null;
+            let type;
+            if (dayTasks.length === 0) type = "none";
+            else if (i > todayIdx)     type = "future";
+            else if (i === todayIdx)   type = ds === 100 ? "done" : "today";
+            else if (ds === 100)       type = "done";
+            else if (ds >= 75)         type = "partial";
+            else                       type = "failed";
+            return (
+              <div key={d} style={S.dayCol}>
+                <div style={{ ...S.dayBar(type), opacity: dayTasks.length === 0 ? 0.15 : 1 }} />
+                <div style={S.dayLbl}>{shortDay(d)}</div>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${score === 100 ? "#1a4a2a" : C.borderFaint}`, fontSize: 13, lineHeight: 1.6, color: C.textMid }}>
+          {complianceTip}
+        </div>
+      </div>
+
+      <div style={S.sectionLabel}>Today's tasks</div>
+      {scheduledTasks.length === 0 ? (
+        <div style={{ padding: "4px 20px 0", fontSize: 14, color: C.textDim }}>Nothing scheduled. Rest day.</div>
+      ) : (
+        scheduledTasks.map(task => (
+          <TaskToggleRow key={task.id} task={task} done={!!log[task.id]} onChange={v => setLog(task.id, v)} />
+        ))
+      )}
+
+      {taskResults.length > 0 && (() => {
+        const schedule_today = (r) => getSchedule(data, r.taskId).includes(dayIndex(today));
+        const failedTasks  = taskResults.filter(r => r.status === "failed");
+        const onTrackTasks = taskResults.filter(r => r.status === "on_track");
+        const doneTasks    = onTrackTasks.filter(r => {
+          const schedule = getSchedule(data, r.taskId);
+          const futureDays = weekDays.slice(todayIdx + 1).filter(d => schedule.includes(dayIndex(d)));
+          return futureDays.length === 0 && r.totalSoFar > 0 && r.doneSoFar === r.totalSoFar;
+        });
+        const ongoingTasks = onTrackTasks.filter(r => !doneTasks.includes(r));
+        const weekCard = [...doneTasks, ...ongoingTasks, ...failedTasks];
+        return (
+          <>
+            <div style={S.sectionLabel}>Status</div>
+            {weekCard.length > 0 && (
+              <div style={S.statusCard(failedTasks.length > 0 ? "failed" : "on_track")}>
+                <div style={{ fontSize: 12, color: C.textDim, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>This week</div>
+                {doneTasks.map(r => (
+                  <div key={r.taskId} style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 4 }}>
+                    <span style={{ fontSize: 11, color: C.green, flexShrink: 0 }}>✓</span>
+                    <span style={{ fontSize: 14, color: C.textDim }}>{r.label}</span>
+                    <span style={{ ...S.badge("on_track"), marginLeft: "auto" }}>done</span>
+                  </div>
+                ))}
+                {ongoingTasks.length > 0 && doneTasks.length > 0 && <div style={{ borderTop: `1px solid ${C.borderFaint}`, margin: "6px 0" }} />}
+                {ongoingTasks.map(r => (
+                  <div key={r.taskId} style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 4 }}>
+                    <span style={{ fontSize: 11, color: "#3b82f6", flexShrink: 0 }}>→</span>
+                    <span style={{ fontSize: 14, color: C.textMid }}>{r.label}</span>
+                    <span style={{ fontSize: 10, fontWeight: 500, padding: "3px 8px", borderRadius: 4, letterSpacing: "0.07em", textTransform: "uppercase", background: "#0a1a2e", color: "#3b82f6", marginLeft: "auto", flexShrink: 0 }}>{r.detail}</span>
+                  </div>
+                ))}
+                {failedTasks.length > 0 && (ongoingTasks.length > 0 || doneTasks.length > 0) && <div style={{ borderTop: `1px solid #3d1a1a`, margin: "6px 0" }} />}
+                {failedTasks.map(r => (
+                  <div key={r.taskId} style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 4 }}>
+                    <span style={{ fontSize: 11, color: C.red, flexShrink: 0 }}>✕</span>
+                    <span style={{ fontSize: 14, color: C.textMid }}>{r.label}</span>
+                    <span style={{ ...S.badge("failed"), marginLeft: "auto", flexShrink: 0 }}>{r.detail}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {(() => {
+              const futureItems = [];
+              weekDays.slice(todayIdx + 1).forEach(d => {
+                tasksForDate(data, d).forEach(t => { if (!futureItems.find(x => x.id === t.id)) futureItems.push(t); });
+              });
+              if (futureItems.length === 0) return null;
+              return (
+                <div style={{ ...S.statusCard("on_track"), borderColor: "#1e2a1e" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                    <div style={{ fontSize: 12, color: C.textDim, letterSpacing: "0.08em", textTransform: "uppercase" }}>Still counts this week</div>
+                    <div style={{ fontSize: 10, color: C.textDim }}>{daysLeft} day{daysLeft !== 1 ? "s" : ""} left</div>
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px" }}>
+                    {futureItems.map(t => <div key={t.id} style={{ fontSize: 14, color: C.textMid }}>· {t.label}</div>)}
+                  </div>
+                </div>
+              );
+            })()}
+          </>
+        );
+      })()}
+    </div>
+  );
+}
+
+// ── TASKS ─────────────────────────────────────────────────────────
+function TaskEditView({ task, onSave, onCancel }) {
+  const [label, setLabel] = useState(task.label);
+  const [sub, setSub]     = useState(task.sub || "");
+  const [days, setDays]   = useState(task.days || []);
+  const describe = (d) => {
+    if (d.length === 0) return "Not scheduled — won't appear in daily log or compliance.";
+    if (d.length === 7) return "Required every day.";
+    if (d.length === 1) return `Required once a week (${DAY_NAMES[d[0]]}).`;
+    return `Required ${d.length}× per week.`;
+  };
+  const save = () => { if (!label.trim()) return; onSave({ id: task.id, label: label.trim(), sub: sub.trim(), days, isNew: task.isNew }); };
+  return (
+    <div>
+      <div style={S.header}>
+        <BackButton onBack={onCancel} />
+        <div style={S.pageTitle}>{task.isNew ? "New task" : (label || task.label)}</div>
+      </div>
+      <div style={{ padding: "20px 20px 0" }}>
+        <div style={{ fontSize: 12, color: C.textMid, marginBottom: 6 }}>Name</div>
+        <input style={S.input} value={label} onChange={e => setLabel(e.target.value)} autoFocus />
+        <div style={{ fontSize: 12, color: C.textMid, marginBottom: 6 }}>Subtitle</div>
+        <input style={S.input} placeholder="Optional hint" value={sub} onChange={e => setSub(e.target.value)} />
+        <div style={{ fontSize: 12, color: C.textMid, marginBottom: 12 }}>Schedule</div>
+        <DayPicker value={days} onChange={setDays} />
+        <div style={{ fontSize: 12, color: C.textDim, marginTop: 10, marginBottom: 20, lineHeight: 1.5 }}>{describe(days)}</div>
+        <button style={S.btn("primary")} onClick={save}>Save task</button>
+      </div>
+    </div>
+  );
+}
+
+function TasksScreen({ data, setData }) {
+  const [editingTask, setEditingTask] = useState(null);
+
+  const scheduleLabel = (days) => {
+    if (!days || days.length === 0) return "not scheduled";
+    if (days.length === 7) return "every day";
+    if (days.length === 1) return `${DAY_NAMES[days[0]]} only`;
+    return `${days.length}× per week`;
+  };
+
+  const saveTask = async ({ id, label, sub, days, isNew }) => {
+    let tasks, schedules;
+    if (isNew) {
+      tasks = [...data.tasks, { id, label, sub }];
+      schedules = { ...(data.schedules || {}), [id]: days };
+    } else {
+      tasks = data.tasks.map(t => t.id === id ? { ...t, label, sub } : t);
+      schedules = { ...(data.schedules || {}), [id]: days };
+    }
+    const newData = { ...data, tasks, schedules };
+    setData(newData); await saveData(newData);
+    setEditingTask(null);
+  };
+
+  const deleteTask = async (id) => {
+    const schedules = { ...(data.schedules || {}) };
+    delete schedules[id];
+    const newData = { ...data, tasks: data.tasks.filter(t => t.id !== id), schedules };
+    setData(newData); await saveData(newData);
+  };
+
+  if (editingTask) return <TaskEditView task={editingTask} onSave={saveTask} onCancel={() => setEditingTask(null)} />;
+
+  return (
+    <div>
+      <div style={S.header}>
+        <div style={S.dateLine}>Manage</div>
+        <div style={S.pageTitle}>Tasks</div>
+      </div>
+      <div style={S.sectionLabel}>Your tasks</div>
+      {data.tasks.map(task => {
+        const schedule = getSchedule(data, task.id);
+        return (
+          <div key={task.id} style={{ ...S.row, alignItems: "flex-start" }}>
+            <div style={{ flex: 1, paddingTop: 1 }}>
+              <div style={S.rowLabel}>{task.label}</div>
+              <div style={S.rowSub}>{scheduleLabel(schedule)}</div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", paddingTop: 2 }}>
+              <button style={S.iconBtn} onClick={() => setEditingTask({ id: task.id, label: task.label, sub: task.sub || "", days: schedule })}>✎</button>
+              <button style={{ ...S.iconBtn, color: C.red }} onClick={() => deleteTask(task.id)}>✕</button>
+            </div>
+          </div>
+        );
+      })}
+      <div style={{ padding: "12px 20px 0" }}>
+        <button style={{ ...S.btn("secondary"), marginBottom: 0 }} onClick={() => setEditingTask({ id: uid(), label: "", sub: "", days: [], isNew: true })}>+ Add task</button>
+      </div>
+    </div>
+  );
+}
+
+// ── WORKOUT ───────────────────────────────────────────────────────
+function WorkoutScreen({ data, setData }) {
+  const [view, setView] = useState("plans");
+  const [activePlan, setActivePlan] = useState(null);
+  const [doneEx, setDoneEx] = useState({});
+  const [form, setForm] = useState({ name: "", exercises: "" });
+
+  const today = todayStr();
+  const todaySessions = data.sessions.filter(s => s.date === today);
+
+  const startPlan = (plan) => { setActivePlan(plan); setDoneEx({}); setView("session"); };
+  const openNew   = () => { setForm({ name: "", exercises: "" }); setActivePlan(null); setView("form"); };
+  const openEdit  = (plan) => { setActivePlan(plan); setForm({ name: plan.name, exercises: plan.exercises.join("\n") }); setView("form"); };
+
+  const savePlan = async () => {
+    if (!form.name.trim()) return;
+    const exercises = form.exercises.split("\n").map(e => e.trim()).filter(Boolean);
+    if (!exercises.length) return;
+    const plans = activePlan
+      ? data.plans.map(p => p.id === activePlan.id ? { ...p, name: form.name.trim(), exercises } : p)
+      : [...data.plans, { id: uid(), name: form.name.trim(), exercises }];
+    const newData = { ...data, plans };
+    setData(newData); await saveData(newData);
+    setView("plans");
+  };
+
+  const deletePlan = async (id) => {
+    const newData = { ...data, plans: data.plans.filter(p => p.id !== id) };
+    setData(newData); await saveData(newData);
+  };
+
+  const finishSession = async () => {
+    const session = { id: uid(), plan_id: activePlan.id, date: today, completed: true };
+    const workoutTask = data.tasks.find(t => t.label.toLowerCase().includes("workout"));
+    const wId = workoutTask?.id || "workout";
+    const log = getLog(data, today);
+    const newData = { ...data, sessions: [...data.sessions, session], logs: { ...data.logs, [today]: { ...log, [wId]: true } } };
+    setData(newData); await saveData(newData);
+    setView("plans");
+  };
+
+  if (view === "session" && activePlan) {
+    const allDone = activePlan.exercises.every((_, i) => doneEx[i]);
+    return (
+      <div>
+        <div style={S.header}>
+          <BackButton onBack={() => setView("plans")} />
+          <div style={S.pageTitle}>{activePlan.name}</div>
+        </div>
+        <div style={S.sectionLabel}>Exercises</div>
+        {activePlan.exercises.map((ex, i) => (
+          <div key={i} style={S.row}>
+            <div style={{ ...S.rowLabel, color: doneEx[i] ? C.textDim : C.text, textDecoration: doneEx[i] ? "line-through" : "none" }}>{ex}</div>
+            <div style={S.exercisePill(!!doneEx[i])} onClick={() => setDoneEx(d => ({ ...d, [i]: !d[i] }))}>
+              {doneEx[i] && <span style={{ fontSize: 12, color: C.green }}>✓</span>}
+            </div>
+          </div>
+        ))}
+        {allDone && <div style={{ padding: "16px 20px 0" }}><button style={S.btn("primary")} onClick={finishSession}>Complete workout</button></div>}
+      </div>
+    );
+  }
+
+  if (view === "form") {
+    return (
+      <div>
+        <div style={S.header}>
+          <BackButton onBack={() => setView("plans")} />
+          <div style={S.pageTitle}>{form.name || (activePlan ? activePlan.name : "New plan")}</div>
+        </div>
+        <div style={{ padding: "16px 20px 0" }}>
+          <div style={{ fontSize: 12, color: C.textMid, marginBottom: 6 }}>Plan name</div>
+          <input style={S.input} placeholder="e.g. Push" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+          <div style={{ fontSize: 12, color: C.textMid, marginBottom: 6 }}>Exercises (one per line)</div>
+          <textarea style={{ ...S.input, height: 160, resize: "none", lineHeight: 1.7 }} placeholder={"Bench press\nShoulder press\nTricep dips"} value={form.exercises} onChange={e => setForm(f => ({ ...f, exercises: e.target.value }))} />
+          <button style={S.btn("primary")} onClick={savePlan}>Save plan</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={S.header}>
+        <div style={S.dateLine}>Workout</div>
+        <div style={S.pageTitle}>Plans</div>
+      </div>
+      <div style={S.sectionLabel}>Your plans</div>
+      {data.plans.length === 0 && <div style={{ padding: "0 20px", fontSize: 13, color: C.textDim }}>No plans yet.</div>}
+      {data.plans.map(plan => {
+        const completedToday = todaySessions.some(s => s.plan_id === plan.id);
+        return (
+          <div key={plan.id} style={{ ...S.card, borderColor: completedToday ? C.greenBorder : C.border }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={S.cardTitle}>{plan.name}</div>
+                  {completedToday && <span style={{ fontSize: 10, color: C.green, background: C.greenBg, padding: "2px 7px", borderRadius: 4 }}>done</span>}
+                </div>
+                <div style={S.cardSub}>{plan.exercises.length} exercises · {plan.exercises.slice(0, 2).join(", ")}{plan.exercises.length > 2 ? "…" : ""}</div>
+              </div>
+              <div style={{ display: "flex" }}>
+                <button style={S.iconBtn} onClick={() => openEdit(plan)}>✎</button>
+                <button style={{ ...S.iconBtn, color: C.red }} onClick={() => deletePlan(plan.id)}>✕</button>
+              </div>
+            </div>
+            <button style={{ ...S.btn(completedToday ? "secondary" : "primary"), marginTop: 12, marginBottom: 0, padding: "9px" }} onClick={() => startPlan(plan)}>
+              {completedToday ? "Start again →" : "Start →"}
+            </button>
+          </div>
+        );
+      })}
+      {data.plans.length < 4 && <div style={{ padding: "12px 20px 0" }}><button style={S.btn("secondary")} onClick={openNew}>+ New plan</button></div>}
+    </div>
+  );
+}
+
+// ── HISTORY ───────────────────────────────────────────────────────
+function HistoryScreen({ data, setData }) {
+  const today = todayStr();
+  const currentWeek = getWeekDays();
+  const scheduledTasks = (data.tasks || []).filter(t => getSchedule(data, t.id).length > 0);
+
+  const togglePastLog = async (dateStr, taskId) => {
+    const log = getLog(data, dateStr);
+    const newLog = { ...log, [taskId]: !log[taskId] };
+    const newData = { ...data, logs: { ...data.logs, [dateStr]: newLog } };
+    setData(newData); await saveData(newData);
+  };
+
+  const prevWeeks = [];
+  for (let w = 1; w <= 4; w++) {
+    const days = getWeekDaysOffset(w);
+    const hasData = days.some(d => { const log = data.logs[d]; return log && Object.values(log).some(Boolean); });
+    if (hasData) prevWeeks.push({ days, weeksAgo: w });
+  }
+
+  const weekLabel = (days) => {
+    const start = new Date(days[0] + "T00:00:00");
+    const end   = new Date(days[6] + "T00:00:00");
+    const fmt = (d) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+    return `${fmt(start)} – ${fmt(end)}`;
+  };
+
+  const dayScoreType = (dateStr) => {
+    const tasks = tasksForDate(data, dateStr);
+    if (tasks.length === 0) return "none";
+    const log = getLog(data, dateStr);
+    const pct = Math.round(tasks.filter(t => log[t.id]).length / tasks.length * 100);
+    if (pct === 100) return "done";
+    if (pct >= 75)   return "partial";
+    return "failed";
+  };
+
+  return (
+    <div>
+      <div style={S.header}>
+        <div style={S.dateLine}>Current week</div>
+        <div style={S.pageTitle}>History</div>
+      </div>
+      <div style={S.sectionLabel}>This week</div>
+      <div style={{ overflowX: "auto", padding: "0 20px" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: "left", color: C.textDim, fontWeight: 400, padding: "6px 0", fontSize: 11 }}></th>
+              {scheduledTasks.map(t => <th key={t.id} style={{ color: C.textDim, fontWeight: 400, textAlign: "center", padding: "6px 3px", fontSize: 10, letterSpacing: "0.04em" }}>{t.label.slice(0, 3).toUpperCase()}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {currentWeek.map(d => {
+              const log = getLog(data, d);
+              const isToday = d === today;
+              const isFuture = d > today;
+              const di = dayIndex(d);
+              return (
+                <tr key={d} style={{ borderTop: `1px solid ${C.borderFaint}`, opacity: isFuture ? 0.25 : 1 }}>
+                  <td style={{ padding: "10px 0", color: isToday ? C.text : C.textMid, fontSize: 12 }}>
+                    {new Date(d + "T00:00:00").toLocaleDateString("en-GB", { weekday: "short" })}
+                  </td>
+                  {scheduledTasks.map(t => {
+                    const scheduled = getSchedule(data, t.id).includes(di);
+                    const done = log[t.id];
+                    return (
+                      <td key={t.id} style={{ textAlign: "center", padding: "8px 3px" }}>
+                        {!scheduled ? <div style={{ width: 26, height: 26, margin: "0 auto" }} />
+                          : isFuture ? <div style={{ width: 26, height: 26, borderRadius: "50%", border: `1px solid #222`, margin: "0 auto" }} />
+                          : <div onClick={() => togglePastLog(d, t.id)} style={{ width: 26, height: 26, borderRadius: "50%", margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 12, fontWeight: 600, background: done ? C.greenBg : C.redBg, border: `1px solid ${done ? C.greenBorder : "#5a1a1a"}`, color: done ? C.green : C.red, transition: "all 0.15s", touchAction: "manipulation" }}>{done ? "✓" : "✕"}</div>}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {prevWeeks.length > 0 && (
+        <>
+          <div style={S.sectionLabel}>Previous weeks</div>
+          {prevWeeks.map(({ days, weeksAgo }) => {
+            const score = computeWeekCompliance(data, days);
+            const scoreColor = score === null ? C.textDim : score >= 90 ? C.green : score >= 75 ? C.amber : C.red;
+            return (
+              <div key={weeksAgo} style={{ margin: "0 20px 8px", padding: "14px 16px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                  <div style={{ fontSize: 12, color: C.textDim }}>{weekLabel(days)}</div>
+                  {score !== null && <div style={{ fontSize: 20, fontWeight: 600, color: scoreColor, letterSpacing: "-0.03em" }}>{score}%</div>}
+                </div>
+                <div style={{ display: "flex", gap: 4 }}>
+                  {days.map(d => {
+                    const type = d > today ? "future" : dayScoreType(d);
+                    const hasTasks = tasksForDate(data, d).length > 0;
+                    return (
+                      <div key={d} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                        <div style={{ width: "100%", height: 3, borderRadius: 2, opacity: hasTasks ? 1 : 0.15, background: type === "done" ? C.green : type === "partial" ? C.amber : type === "failed" ? C.red : "#1e1e1e" }} />
+                        <div style={{ fontSize: 9, color: C.textDim }}>{shortDay(d)}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
+
+      <div style={S.sectionLabel}>Workout sessions complete</div>
+      {data.sessions.length === 0 ? (
+        <div style={{ padding: "0 20px", fontSize: 13, color: C.textDim }}>No sessions yet.</div>
+      ) : (
+        <>
+          {[...data.sessions].reverse().slice(0, 5).map(s => {
+            const plan = data.plans.find(p => p.id === s.plan_id);
+            return (
+              <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 20px", borderBottom: `1px solid ${C.borderFaint}` }}>
+                <div style={{ fontSize: 14, color: C.text }}>{plan ? plan.name : "Deleted plan"}</div>
+                <div style={{ fontSize: 11, color: C.textDim }}>{new Date(s.date + "T00:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</div>
+              </div>
+            );
+          })}
+          {data.sessions.length > 5 && <div style={{ padding: "10px 20px", fontSize: 12, color: C.textDim }}>{data.sessions.length} sessions completed all time</div>}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Root ──────────────────────────────────────────────────────────
+function App() {
+  const [data, setData] = useState(null);
+  const [tab, setTab] = useState("today");
+
+  useEffect(() => { loadData().then(setData); }, []);
+
+  if (!data) return (
+    <div style={{ ...S.app, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ fontSize: 12, color: C.textDim }}>Loading…</div>
+    </div>
+  );
+
+  const NAV = [
+    { id: "today",   label: "Today" },
+    { id: "workout", label: "Workout" },
+    { id: "tasks",   label: "Tasks" },
+    { id: "history", label: "History" },
+  ];
+
+  return (
+    <div style={S.app}>
+      {tab === "today"   && <TodayScreen   data={data} setData={setData} />}
+      {tab === "workout" && <WorkoutScreen  data={data} setData={setData} />}
+      {tab === "tasks"   && <TasksScreen    data={data} setData={setData} />}
+      {tab === "history" && <HistoryScreen  data={data} setData={setData} />}
+      <div style={S.navBar}>
+        {NAV.map(({ id, label }) => (
+          <button key={id} style={S.navBtn(tab === id)} onClick={() => setTab(id)}>
+            <NavIcon name={id} active={tab === id} />
+            <span style={S.navLabel}>{label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
