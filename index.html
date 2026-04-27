@@ -555,65 +555,59 @@ function TodayContent({ data, setData }) {
       )}
 
       {taskResults.length > 0 && (() => {
-        const schedule_today = (r) => getSchedule(data, r.taskId).includes(dayIndex(today));
-        const failedTasks  = taskResults.filter(r => r.status === "failed");
-        const onTrackTasks = taskResults.filter(r => r.status === "on_track");
-        const doneTasks    = onTrackTasks.filter(r => {
-          const schedule = getSchedule(data, r.taskId);
-          const futureDays = weekDays.slice(todayIdx + 1).filter(d => schedule.includes(dayIndex(d)));
-          return futureDays.length === 0 && r.totalSoFar > 0 && r.doneSoFar === r.totalSoFar;
-        });
-        const ongoingTasks = onTrackTasks.filter(r => !doneTasks.includes(r));
-        const weekCard = [...doneTasks, ...ongoingTasks, ...failedTasks];
+        // Recompute with full-week awareness for each task
+        const weekTaskResults = (data.tasks || []).map(task => {
+          const schedule = getSchedule(data, task.id);
+          if (schedule.length === 0) return null;
+          const totalScheduled = weekDays.filter(d => schedule.includes(dayIndex(d))).length;
+          const pastDays = weekDays.filter(d => d < today && schedule.includes(dayIndex(d)));
+          const futureDays = weekDays.filter(d => d > today && schedule.includes(dayIndex(d)));
+          const pastMissed = pastDays.filter(d => !getLog(data, d)[task.id]).length;
+          const doneCount = weekDays.filter(d => d <= today && schedule.includes(dayIndex(d)) && getLog(data, d)[task.id]).length;
+          const canReachFull = pastMissed === 0; // no past misses = 100% still possible
+          const allDone = doneCount === totalScheduled;
+          return {
+            taskId: task.id, label: task.label,
+            doneCount, totalScheduled, canReachFull, allDone, futureDays: futureDays.length,
+          };
+        }).filter(Boolean);
+
+        const doneTasks    = weekTaskResults.filter(r => r.allDone);
+        const onTrackTasks = weekTaskResults.filter(r => !r.allDone && r.canReachFull);
+        const failedTasks  = weekTaskResults.filter(r => !r.allDone && !r.canReachFull);
+        const weekCard = [...doneTasks, ...onTrackTasks, ...failedTasks];
+
         return (
           <>
             <div style={S.sectionLabel}>Status</div>
             {weekCard.length > 0 && (
               <div style={S.statusCard(failedTasks.length > 0 ? "failed" : "on_track")}>
                 <div style={{ fontSize: 12, color: C.textDim, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>This week</div>
+
                 {doneTasks.map(r => (
                   <div key={r.taskId} style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 4 }}>
-                    <span style={{ fontSize: 11, color: C.green, flexShrink: 0 }}>✓</span>
-                    <span style={{ fontSize: 14, color: C.textDim }}>{r.label}</span>
-                    <span style={{ ...S.badge("on_track"), marginLeft: "auto" }}>done</span>
+                    <span style={{ fontSize: 14, color: C.textDim, flex: 1 }}>{r.label}</span>
+                    <span style={{ ...S.badge("on_track"), flexShrink: 0 }}>done</span>
                   </div>
                 ))}
-                {ongoingTasks.length > 0 && doneTasks.length > 0 && <div style={{ borderTop: `1px solid ${C.borderFaint}`, margin: "6px 0" }} />}
-                {ongoingTasks.map(r => (
+
+                {onTrackTasks.length > 0 && doneTasks.length > 0 && <div style={{ borderTop: `1px solid ${C.borderFaint}`, margin: "6px 0" }} />}
+                {onTrackTasks.map(r => (
                   <div key={r.taskId} style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 4 }}>
-                    <span style={{ fontSize: 11, color: "#3b82f6", flexShrink: 0 }}>→</span>
-                    <span style={{ fontSize: 14, color: C.textMid }}>{r.label}</span>
-                    <span style={{ fontSize: 10, fontWeight: 500, padding: "3px 8px", borderRadius: 4, letterSpacing: "0.07em", textTransform: "uppercase", background: "#0a1a2e", color: "#3b82f6", marginLeft: "auto", flexShrink: 0 }}>{r.detail}</span>
+                    <span style={{ fontSize: 14, color: C.textMid, flex: 1 }}>{r.label}</span>
+                    <span style={{ fontSize: 10, fontWeight: 500, padding: "3px 8px", borderRadius: 4, letterSpacing: "0.07em", textTransform: "uppercase", background: "#0a1a2e", color: "#3b82f6", flexShrink: 0 }}>on track</span>
                   </div>
                 ))}
-                {failedTasks.length > 0 && (ongoingTasks.length > 0 || doneTasks.length > 0) && <div style={{ borderTop: `1px solid #3d1a1a`, margin: "6px 0" }} />}
+
+                {failedTasks.length > 0 && (onTrackTasks.length > 0 || doneTasks.length > 0) && <div style={{ borderTop: `1px solid ${C.borderFaint}`, margin: "6px 0" }} />}
                 {failedTasks.map(r => (
                   <div key={r.taskId} style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 4 }}>
-                    <span style={{ fontSize: 11, color: C.red, flexShrink: 0 }}>✕</span>
-                    <span style={{ fontSize: 14, color: C.textMid }}>{r.label}</span>
-                    <span style={{ ...S.badge("failed"), marginLeft: "auto", flexShrink: 0 }}>{r.detail}</span>
+                    <span style={{ fontSize: 14, color: C.textMid, flex: 1 }}>{r.label}</span>
+                    <span style={{ fontSize: 10, fontWeight: 500, padding: "3px 8px", borderRadius: 4, letterSpacing: "0.07em", textTransform: "uppercase", background: "#2a1500", color: C.amber, flexShrink: 0 }}>failed</span>
                   </div>
                 ))}
               </div>
             )}
-            {(() => {
-              const futureItems = [];
-              weekDays.slice(todayIdx + 1).forEach(d => {
-                tasksForDate(data, d).forEach(t => { if (!futureItems.find(x => x.id === t.id)) futureItems.push(t); });
-              });
-              if (futureItems.length === 0) return null;
-              return (
-                <div style={{ ...S.statusCard("on_track"), borderColor: "#1e2a1e" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                    <div style={{ fontSize: 12, color: C.textDim, letterSpacing: "0.08em", textTransform: "uppercase" }}>Still counts this week</div>
-                    <div style={{ fontSize: 10, color: C.textDim }}>{daysLeft} day{daysLeft !== 1 ? "s" : ""} left</div>
-                  </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px" }}>
-                    {futureItems.map(t => <div key={t.id} style={{ fontSize: 14, color: C.textMid }}>· {t.label}</div>)}
-                  </div>
-                </div>
-              );
-            })()}
           </>
         );
       })()}
