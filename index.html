@@ -231,17 +231,16 @@ function evaluateAllTasks(data) {
 }
 
 function computeCompliance(data) {
-  const today = todayStr();
   const weekDays = getWeekDays();
-  const todayIdx = weekDays.indexOf(today);
+  const today = todayStr();
   let required = 0, done = 0;
   (data.tasks || []).forEach(task => {
     const schedule = getSchedule(data, task.id);
-    weekDays.forEach((d, i) => {
-      if (i > todayIdx) return;
+    weekDays.forEach(d => {
       if (!schedule.includes(dayIndex(d))) return;
       required++;
-      if (getLog(data, d)[task.id]) done++;
+      // Only count days up to and including today as done/missed
+      if (d <= today && getLog(data, d)[task.id]) done++;
     });
   });
   return required === 0 ? 100 : Math.round((done / required) * 100);
@@ -352,8 +351,14 @@ const S = {
   navBtn: (a) => ({
     display: "flex", flexDirection: "column", alignItems: "center", gap: 5,
     background: "none", border: "none", cursor: "pointer",
-    padding: "4px 0", color: a ? C.text : C.textDim,
+    padding: "4px 0", color: a ? C.bg : C.textDim,
     fontFamily: FONT, touchAction: "manipulation", flex: 1,
+  }),
+  navPill: (a) => ({
+    display: "flex", alignItems: "center", justifyContent: "center",
+    width: 44, height: 32, borderRadius: 10,
+    background: a ? C.text : "transparent",
+    transition: "background 0.15s",
   }),
   navLabel: { fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase" },
   card: { margin: "0 20px 8px", padding: "14px 16px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8 },
@@ -422,11 +427,11 @@ function TaskToggleRow({ task, done, onChange }) {
 }
 
 function NavIcon({ name, active }) {
-  const c = active ? C.text : C.textDim;
-  if (name === "today")   return <svg width="24" height="24" viewBox="0 0 18 18" fill="none"><rect x="2" y="2" width="14" height="14" rx="2" stroke={c} strokeWidth="1.3"/><line x1="6" y1="7" x2="12" y2="7" stroke={c} strokeWidth="1.3" strokeLinecap="round"/><line x1="6" y1="10" x2="10" y2="10" stroke={c} strokeWidth="1.3" strokeLinecap="round"/></svg>;
-  if (name === "workout") return <svg width="24" height="24" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="6" stroke={c} strokeWidth="1.3"/><polyline points="6,9 8,11 12,7" stroke={c} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>;
-  if (name === "history") return <svg width="24" height="24" viewBox="0 0 18 18" fill="none"><rect x="3" y="4" width="12" height="11" rx="1.5" stroke={c} strokeWidth="1.3"/><line x1="3" y1="7" x2="15" y2="7" stroke={c} strokeWidth="1.3"/><line x1="6" y1="2" x2="6" y2="5" stroke={c} strokeWidth="1.3" strokeLinecap="round"/><line x1="12" y1="2" x2="12" y2="5" stroke={c} strokeWidth="1.3" strokeLinecap="round"/></svg>;
-  if (name === "tasks")   return <svg width="24" height="24" viewBox="0 0 18 18" fill="none"><path d="M3 5h12M3 9h8M3 13h10" stroke={c} strokeWidth="1.3" strokeLinecap="round"/></svg>;
+  const c = active ? C.bg : C.textDim;
+  if (name === "today")   return <svg width="20" height="20" viewBox="0 0 18 18" fill="none"><rect x="2" y="2" width="14" height="14" rx="2" stroke={c} strokeWidth="1.3"/><line x1="6" y1="7" x2="12" y2="7" stroke={c} strokeWidth="1.3" strokeLinecap="round"/><line x1="6" y1="10" x2="10" y2="10" stroke={c} strokeWidth="1.3" strokeLinecap="round"/></svg>;
+  if (name === "workout") return <svg width="20" height="20" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="6" stroke={c} strokeWidth="1.3"/><polyline points="6,9 8,11 12,7" stroke={c} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>;
+  if (name === "history") return <svg width="20" height="20" viewBox="0 0 18 18" fill="none"><rect x="3" y="4" width="12" height="11" rx="1.5" stroke={c} strokeWidth="1.3"/><line x1="3" y1="7" x2="15" y2="7" stroke={c} strokeWidth="1.3"/><line x1="6" y1="2" x2="6" y2="5" stroke={c} strokeWidth="1.3" strokeLinecap="round"/><line x1="12" y1="2" x2="12" y2="5" stroke={c} strokeWidth="1.3" strokeLinecap="round"/></svg>;
+  if (name === "tasks")   return <svg width="20" height="20" viewBox="0 0 18 18" fill="none"><path d="M3 5h12M3 9h8M3 13h10" stroke={c} strokeWidth="1.3" strokeLinecap="round"/></svg>;
   return null;
 }
 
@@ -1094,8 +1099,10 @@ function App() {
       <div id="nav-bar" style={{ ...S.navBar }}>
         {NAV.map(({ id, label }) => (
           <button key={id} style={S.navBtn(tab === id)} onClick={() => setTab(id)}>
-            <NavIcon name={id} active={tab === id} />
-            <span style={S.navLabel}>{label}</span>
+            <div style={S.navPill(tab === id)}>
+              <NavIcon name={id} active={tab === id} />
+            </div>
+            <span style={{ ...S.navLabel, color: tab === id ? C.text : C.textDim }}>{label}</span>
           </button>
         ))}
       </div>
