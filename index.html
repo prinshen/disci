@@ -18,15 +18,23 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" />
   <style>
     * { -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { background: #0f0f0f; height: 100%; width: 100%; overflow: hidden; position: fixed; }
-    #root { height: 100%; width: 100%; display: flex; flex-direction: column; align-items: center; }
+    html { background: #0f0f0f; height: 100%; }
+    body { background: #0f0f0f; height: 100%; overflow: hidden; }
+    #root { height: 100%; width: 100%; display: flex; justify-content: center; }
+    #app-shell { height: 100%; width: 100%; max-width: 430px; display: flex; flex-direction: column; }
+    #nav-bar { flex-shrink: 0; padding-bottom: env(safe-area-inset-bottom); }
+    #screen-header { flex-shrink: 0; }
+    #content-area {
+      flex: 1;
+      overflow-y: scroll;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-y: auto;
+    }
     div { max-width: 100%; }
     input, textarea, select { font-size: 16px !important; -webkit-appearance: none; }
     select { background: #161616; color: #f0f0f0; }
     button { -webkit-appearance: none; }
     ::-webkit-scrollbar { display: none; }
-    #content-area { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; width: 100%; }
-    #nav-bar { flex-shrink: 0; }
   </style>
 </head>
 <body>
@@ -334,7 +342,7 @@ const S = {
     background: C.bg, borderTop: `1px solid ${C.borderFaint}`,
     display: "flex", justifyContent: "space-around",
     paddingTop: 12,
-    paddingBottom: "calc(10px + env(safe-area-inset-bottom))",
+    paddingBottom: 10,
     zIndex: 100,
     flexShrink: 0,
   },
@@ -419,8 +427,29 @@ function NavIcon({ name, active }) {
   return null;
 }
 
+// ── Shared header components (rendered outside scroll area) ───────
+function TodayHeader() {
+  const today = todayStr();
+  return (
+    <div style={S.header}>
+      <div style={S.dateLine}>{formatDate(today)}</div>
+      <div style={S.pageTitle}>Today</div>
+    </div>
+  );
+}
+
+function SimpleHeader({ sub, title }) {
+  return (
+    <div style={S.header}>
+      <div style={S.dateLine}>{sub}</div>
+      <div style={S.pageTitle}>{title}</div>
+    </div>
+  );
+}
+
 // ── TODAY ─────────────────────────────────────────────────────────
-function TodayScreen({ data, setData }) {
+// TodayContent = scrollable content only (no header)
+function TodayContent({ data, setData }) {
   const today = todayStr();
   const log = getLog(data, today);
   const scheduledTasks = tasksForDate(data, today);
@@ -472,10 +501,6 @@ function TodayScreen({ data, setData }) {
 
   return (
     <div style={{ width: "100%" }}>
-      <div style={S.header}>
-        <div style={S.dateLine}>{formatDate(today)}</div>
-        <div style={S.pageTitle}>Today</div>
-      </div>
 
       {/* Compliance block */}
       <div style={{ margin: "12px 20px 8px", padding: "13px 15px", background: score === 100 ? C.greenBg : C.surface, border: `1px solid ${score === 100 ? C.greenBorder : C.border}`, borderRadius: 8, transition: "background 0.4s, border-color 0.4s" }}>
@@ -736,10 +761,6 @@ function TasksScreen({ data, setData }) {
 
   return (
     <div style={{ width: "100%" }}>
-      <div style={S.header}>
-        <div style={S.dateLine}>Manage</div>
-        <div style={S.pageTitle}>Tasks</div>
-      </div>
       <div style={S.sectionLabel}>Your tasks</div>
       {data.tasks.map(task => {
         const schedule = getSchedule(data, task.id);
@@ -848,10 +869,6 @@ function WorkoutScreen({ data, setData }) {
 
   return (
     <div style={{ width: "100%" }}>
-      <div style={S.header}>
-        <div style={S.dateLine}>Workout</div>
-        <div style={S.pageTitle}>Plans</div>
-      </div>
       <div style={S.sectionLabel}>Your plans</div>
       {data.plans.length === 0 && <div style={{ padding: "0 20px", fontSize: 13, color: C.textDim }}>No plans yet.</div>}
       {data.plans.map(plan => {
@@ -921,10 +938,6 @@ function HistoryScreen({ data, setData }) {
 
   return (
     <div style={{ width: "100%" }}>
-      <div style={S.header}>
-        <div style={S.dateLine}>Current week</div>
-        <div style={S.pageTitle}>History</div>
-      </div>
       <div style={S.sectionLabel}>This week</div>
       <div style={{ width: "100%", padding: "0 20px", boxSizing: "border-box" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, tableLayout: "fixed" }}>
@@ -1062,14 +1075,20 @@ function App() {
   ];
 
   return (
-    <div style={S.app}>
-      <div id="content-area" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-        {tab === "today"   && <TodayScreen   data={data} setData={setData} />}
-        {tab === "workout" && <WorkoutScreen  data={data} setData={setData} />}
-        {tab === "tasks"   && <TasksScreen    data={data} setData={setData} />}
-        {tab === "history" && <HistoryScreen  data={data} setData={setData} />}
+    <div id="app-shell" style={{ background: C.bg, color: C.text, fontFamily: FONT, WebkitFontSmoothing: "antialiased" }}>
+      <div id="screen-header">
+        {tab === "today"   && <TodayHeader />}
+        {tab === "workout" && <SimpleHeader sub="Workout" title="Plans" />}
+        {tab === "tasks"   && <SimpleHeader sub="Manage" title="Tasks" />}
+        {tab === "history" && <SimpleHeader sub="Current week" title="History" />}
       </div>
-      <div id="nav-bar" style={S.navBar}>
+      <div id="content-area">
+        {tab === "today"   && <TodayContent   data={data} setData={setData} />}
+        {tab === "workout" && <WorkoutScreen   data={data} setData={setData} />}
+        {tab === "tasks"   && <TasksScreen     data={data} setData={setData} />}
+        {tab === "history" && <HistoryScreen   data={data} setData={setData} />}
+      </div>
+      <div id="nav-bar" style={{ ...S.navBar }}>
         {NAV.map(({ id, label }) => (
           <button key={id} style={S.navBtn(tab === id)} onClick={() => setTab(id)}>
             <NavIcon name={id} active={tab === id} />
